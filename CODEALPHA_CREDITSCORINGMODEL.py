@@ -16,7 +16,7 @@ from sklearn.feature_selection import SelectKBest, f_classif
 import warnings
 warnings.filterwarnings('ignore')
 # Set style for plots
-plt.style.use('seaborn-v0_8')
+plt.style.use('default')  # Changed from 'seaborn-v0_8' for compatibility
 sns.set_palette("husl")
 class CreditScoringModel:
     """
@@ -28,6 +28,7 @@ class CreditScoringModel:
         self.scaler = StandardScaler()
         self.feature_selector = SelectKBest(f_classif, k=10)
         self.results = {}
+        self.label_encoders = {}  # Store label encoders for prediction 
     def generate_sample_data(self, n_samples=1000):
         """
         Generate sample financial data for demonstration
@@ -92,6 +93,9 @@ class CreditScoringModel:
         le_home = LabelEncoder()
         df['education_level_encoded'] = le_education.fit_transform(df['education_level'])
         df['home_ownership_encoded'] = le_home.fit_transform(df['home_ownership'])
+        # Store encoders for later use in predictions
+        self.label_encoders['education'] = le_education
+        self.label_encoders['home_ownership'] = le_home
         # Select features for modeling
         feature_columns = [
             'income', 'age', 'employment_years', 'debt_to_income_ratio',
@@ -158,7 +162,7 @@ class CreditScoringModel:
             # Cross-validation
             cv_scores = cross_val_score(model, X_test, y_test, cv=5, scoring='roc_auc')
             print(f"CV ROC-AUC: {cv_scores.mean():.4f} (+/- {cv_scores.std() * 2:.4f})")
-    def plot_model_comparison(self):
+    def plot_model_comparison(self, X_test, y_test):
         """
         Create visualizations comparing model performance
         """
@@ -230,7 +234,21 @@ class CreditScoringModel:
             customer_data = pd.DataFrame([customer_data])
         # Apply same preprocessing
         customer_data_processed = self.feature_engineering(customer_data)
-        X_customer, _, _ = self.preprocess_data(customer_data_processed)
+        # Encode categorical variables using stored encoders
+        customer_data_processed['education_level_encoded'] = self.label_encoders['education'].transform(customer_data_processed['education_level'])
+        customer_data_processed['home_ownership_encoded'] = self.label_encoders['home_ownership'].transform(customer_data_processed['home_ownership'])
+        # Select the same features used in training
+        feature_columns = [
+            'income', 'age', 'employment_years', 'debt_to_income_ratio',
+            'credit_history_length', 'number_of_loans', 'payment_history_score',
+            'total_debt', 'savings_balance', 'number_of_credit_cards',
+            'monthly_expenses', 'education_level_encoded', 'home_ownership_encoded',
+            'savings_to_income_ratio', 'expense_to_income_ratio', 
+            'age_income_interaction', 'employment_stability', 'avg_debt_per_loan',
+            'credit_cards_per_income', 'high_debt_flag', 'low_savings_flag',
+            'young_borrower_flag'
+        ]
+        X_customer = customer_data_processed[feature_columns]
         # Scale features
         X_customer_scaled = self.scaler.transform(X_customer)
         # Predict
@@ -269,23 +287,28 @@ if __name__ == "__main__":
     # Generate sample data (replace with real data loading in production)
     print("Loading and preparing data...")
     df = credit_model.generate_sample_data(n_samples=2000)
+    print(f"Dataset shape: {df.shape}")
+    print(f"Default rate: {df['default_risk'].mean():.2%}")
     # Feature engineering
     print("Performing feature engineering...")
     df_engineered = credit_model.feature_engineering(df)
     # Preprocess data
     X, y, feature_columns = credit_model.preprocess_data(df_engineered)
+    print(f"Features used: {len(feature_columns)}")
     # Split data
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
     # Scale features
     X_train_scaled = credit_model.scaler.fit_transform(X_train)
     X_test_scaled = credit_model.scaler.transform(X_test)
+    print(f"Training set size: {X_train.shape[0]}")
+    print(f"Test set size: {X_test.shape[0]}")
     # Train models
     credit_model.train_models(X_train_scaled, y_train)
     # Evaluate models
     credit_model.evaluate_models(X_test_scaled, y_test)
     # Generate visualizations
     print("\nGenerating model comparison plots...")
-    credit_model.plot_model_comparison()
+    credit_model.plot_model_comparison(X_test, y_test)
     # Generate final report
     best_model_name = credit_model.generate_report()
     # Example prediction for a new customer
@@ -312,10 +335,21 @@ if __name__ == "__main__":
         print(f"Default Probability: {prediction['default_probability']:.3f}")
         print(f"Credit Score: {prediction['credit_score']}")
         print(f"Risk Level: {prediction['risk_level']}")
+        # Additional customer analysis
+        print(f"\nCustomer Profile Analysis:")
+        print(f"Debt-to-Income Ratio: {sample_customer['total_debt']/sample_customer['income']:.2%}")
+        print(f"Savings-to-Income Ratio: {sample_customer['savings_balance']/sample_customer['income']:.2%}")
     except Exception as e:
         print(f"Prediction error: {e}")
-        print("Note: Feature scaling needs to be applied to new data in production")
     print("\n" + "="*80)
     print("Model training and evaluation completed successfully!")
     print("Ready for deployment in Code Alpha Company's credit assessment system.")
     print("="*80)
+    # Display summary statistics
+    print("\nDataset Summary:")
+    print(f"Total samples: {len(df)}")
+    print(f"Default cases: {df['default_risk'].sum()}")
+    print(f"Non-default cases: {len(df) - df['default_risk'].sum()}")
+    print(f"Average income: ${df['income'].mean():,.0f}")
+    print(f"Average total debt: ${df['total_debt'].mean():,.0f}")
+    print(f"Average payment history score: {df['payment_history_score'].mean():.0f}")
